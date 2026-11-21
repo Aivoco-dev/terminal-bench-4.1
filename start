@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+export PATH="$PATH:$HOME/.local/bin:$HOME/.opencode/bin:/opt/homebrew/bin:/usr/local/bin"
+repo=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+exec python3 "$repo/run.py" "$@"
