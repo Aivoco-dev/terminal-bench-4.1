@@ -1,5 +1,6 @@
 """Per-attempt Vision memory and a local OpenAI Chat Completions bridge."""
 
+import argparse
 import contextlib
 import json
 import secrets
@@ -39,6 +40,28 @@ def load_key(repo):
     if not key:
         raise RuntimeError(f"Set VISPARK_LAB_API in {repo / '.env'}")
     return key
+
+
+def add_continual_learning_argument(parser):
+    parser.add_argument(
+        "--continual-learning", action=argparse.BooleanOptionalAction,
+        help="Enable or disable continual learning for this run. Overrides CONTINUAL_LEARNING in .env.",
+    )
+
+
+def parse_continual_learning(value):
+    normalized = value.strip().lower()
+    if normalized in ("on", "true", "1"):
+        return True
+    if normalized in ("off", "false", "0"):
+        return False
+    raise ValueError("CONTINUAL_LEARNING must be on or off")
+
+
+def resolve_continual_learning(override, settings):
+    if override is not None:
+        return override
+    return parse_continual_learning(settings.get("CONTINUAL_LEARNING") or "on")
 
 
 def to_vision(messages):
@@ -87,8 +110,9 @@ def to_vision(messages):
 
 
 class Vision:
-    def __init__(self, key, opener=None):
+    def __init__(self, key, opener=None, *, continual_learning=True):
         self.key = key
+        self.continual_learning = continual_learning
         self.opener = opener or build_opener(NoRedirect())
         self.weights = None
         self.lock = threading.Lock()
@@ -98,12 +122,12 @@ class Vision:
         system, content = to_vision(messages)
         payload = {
             "size": "large", "content": content, "system_message": system,
-            "stream": False, "continual_learning": True,
+            "stream": False, "continual_learning": self.continual_learning,
         }
         if tools:
             payload["tools"] = tools
         with self.lock:
-            if self.weights:
+            if self.continual_learning and self.weights:
                 payload["weights"] = self.weights
             request = Request(VISION_URL, json.dumps(payload).encode(), {
                 "Content-Type": "application/json", "X-API-Key": self.key,
@@ -128,9 +152,11 @@ class Vision:
             self.usage["calls"] += 1
             for field in ("input_tokens", "output_tokens", "continual_learning_usage", "units_consumed"):
                 self.usage[field] += (data.get(field) or result.get(field) or 0)
-            if data.get("continual_learning_error") or not isinstance(data.get("weights"), str) or not data["weights"]:
-                raise RuntimeError("Vision did not return usable continual-learning weights")
-            self.weights = data["weights"]
+            if self.continual_learning:
+                weights = data.get("weights")
+                if data.get("continual_learning_error") or not isinstance(weights, str) or not weights:
+                    raise RuntimeError("Vision did not return usable continual-learning weights")
+                self.weights = weights
             calls = data.get("tool_calls") or []
             message = {"role": "assistant", "content": data.get("content") or ""}
             if calls:
@@ -147,13 +173,13 @@ class Vision:
             return message, usage
 
     def report(self):
-        return self.usage.copy()
+        return {**self.usage, "continual_learning": self.continual_learning}
 
 
 @contextlib.contextmanager
-def bridge(key, limit=600, opener=None, rpc=None):
+def bridge(key, limit=600, opener=None, rpc=None, *, continual_learning=True):
     """Bind the model server to loopback and scope memory to the server lifetime."""
-    vision = Vision(key, opener)
+    vision = Vision(key, opener, continual_learning=continual_learning)
     token = secrets.token_urlsafe(24)
     request_lock = threading.Lock()
 

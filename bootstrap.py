@@ -26,7 +26,7 @@ def ensure_env():
             file.write((REPO / ".env.example").read_text())
 
 
-def result_directory(*, benchmark, harness, release, tasks, workers, **options):
+def result_directory(*, benchmark, harness, release, tasks, workers, continual_learning, **options):
     now = datetime.now(timezone.utc)
     stamp = now.strftime("%Y%m%dT%H%M%S%fZ")
     path = REPO / "results" / stamp
@@ -36,7 +36,7 @@ def result_directory(*, benchmark, harness, release, tasks, workers, **options):
         "harness": harness,
         "release": release,
         "model": "vispark/vision-large",
-        "continual_learning": True,
+        "continual_learning": continual_learning,
         "started_utc": now.isoformat(),
         "task_count": len(tasks),
         "tasks": tasks,

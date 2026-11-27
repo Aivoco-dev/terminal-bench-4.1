@@ -2,11 +2,12 @@
 
 import asyncio
 import json
+import os
 from pathlib import Path
 
 from harbor.agents.base import BaseAgent
 
-from cl_adapter import Vision, load_key
+from cl_adapter import Vision, load_key, parse_continual_learning
 
 SHELL_TOOL = {
     "type": "function",
@@ -33,7 +34,8 @@ class VisionAgent(BaseAgent):
         pass
 
     async def run(self, instruction, environment, context):
-        vision = Vision(load_key(Path(__file__).resolve().parent))
+        continual_learning = parse_continual_learning(os.environ.get("VISION_CONTINUAL_LEARNING", "on"))
+        vision = Vision(load_key(Path(__file__).resolve().parent), continual_learning=continual_learning)
         messages = [
             {"role": "system", "content": (
                 "Complete the requested task in the provided sandbox through run_command. "
